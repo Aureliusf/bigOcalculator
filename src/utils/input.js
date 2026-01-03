@@ -21,6 +21,16 @@ function getNumberFromConsole(message) {
   return parseInt(number);
 }
 
+function getOptionFromConsole(message, options) {
+  const index = readlineSync.keyInSelect(options, message);
+  if (index === -1) {
+    console.log("Operation cancelled.");
+    return null;
+  }
+  return options[index];
+}
+
 module.exports = {
   getNumberFromConsole,
+  getOptionFromConsole,
 };
