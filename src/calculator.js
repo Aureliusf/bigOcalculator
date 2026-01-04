@@ -18,16 +18,16 @@ function generateInputArray(n) {
  * @param {number} iterations Number of times to run per input size (default 10).
  * @returns {Array<{n: number, time: number}>} An array of data points.
  */
-function runAnalysis(algorithm, inputSizes, iterations = 10) {
+function runAnalysis(algorithm, inputSizes, iterations = 10, inputMode = 'array') {
   const dataPoints = [];
 
   // Warmup phase: Run with the smallest input size a few times to trigger JIT
   if (inputSizes.length > 0) {
     const warmupSize = inputSizes[0];
-    const warmupArray = generateInputArray(warmupSize);
+    const warmupInput = inputMode === 'number' ? warmupSize : generateInputArray(warmupSize);
     // Increased warmup iterations to ensure JIT optimization
     for (let i = 0; i < 100; i++) {
-      algorithm(warmupArray);
+      algorithm(warmupInput);
     }
   }
 
@@ -36,7 +36,7 @@ function runAnalysis(algorithm, inputSizes, iterations = 10) {
     // Determine how many iterations (batchSize) are needed to get a measurable execution time (~10ms)
     // This is crucial for very fast algorithms (O(1), O(log n)) to avoid system timer noise.
     let batchSize = 1;
-    let calibrationArray = generateInputArray(n);
+    const calibrationInput = inputMode === 'number' ? n : generateInputArray(n);
     let calStart = performance.now();
     let calEnd = calStart;
     let calCount = 0;
@@ -45,9 +45,9 @@ function runAnalysis(algorithm, inputSizes, iterations = 10) {
     // We increment calCount to avoid infinite loops if the clock doesn't advance
     while ((calEnd - calStart) < 5 && calCount < 1000000) {
       // Execute the algorithm
-      // Note: We reuse the array. This assumes the algorithm is read-only or idempotent.
+      // Note: We reuse the input. This assumes the algorithm is read-only or idempotent.
       // For O(1)/O(log n) detection, this is usually true and necessary for accuracy.
-      algorithm(calibrationArray);
+      algorithm(calibrationInput);
       calCount++;
       calEnd = performance.now();
     }
@@ -62,13 +62,13 @@ function runAnalysis(algorithm, inputSizes, iterations = 10) {
 
     const times = [];
     for (let i = 0; i < iterations; i++) {
-      // Create a fresh array for each iteration
-      let array = generateInputArray(n);
+      // Generate the correct input type for each iteration
+      const inputForAlgorithm = inputMode === 'number' ? n : generateInputArray(n);
 
       const start = performance.now();
       // Execute batch
       for (let b = 0; b < batchSize; b++) {
-        algorithm(array);
+        algorithm(inputForAlgorithm);
       }
       const end = performance.now();
 
@@ -141,96 +141,54 @@ function determineComplexity(dataPoints) {
 
   models.sort((a, b) => a.rmse - b.rmse);
 
-  // Apply Occam's Razor 2.0: A simpler model wins if its RMSE is not "statistically worse" than a better-fitting, more complex model.
-  // We define "statistically worse" as being more than `tolerance` percent higher than the best model's RMSE.
-  // This prevents a complex model with a tiny RMSE advantage (e.g., 0.001 vs 0.0011) from winning.
-
   let bestModel = models[0];
-  const tolerance = 0.15; // 15% tolerance
-
-  for (let i = 1; i < models.length; i++) {
-    const candidate = models[i];
-    
-    // If candidate is simpler...
-    if (candidate.complexity < bestModel.complexity) {
-      // And its RMSE is within the tolerance margin of the current best model...
-      const diff = (candidate.rmse - bestModel.rmse) / (bestModel.rmse || 1e-9);
-      if (diff < tolerance) {
-        bestModel = candidate; // ...then prefer the simpler model.
-      }
-    }
-    
-    // A special check for O(log n) vs O(1)
-    // If the best model is O(log n) and O(1) is a close contender, it's often due to noise.
-    // Let's make O(log n) "prove" it's significantly better than O(1).
-    if (bestModel.type.includes('O(log n)')) {
-        const o1_model = models.find(m => m.type.includes('O(1)'));
-        if (o1_model) {
-            // If O(1)'s error is NOT much larger than O(log n)'s error, prefer O(1).
-            // "Much larger" can be defined as, e.g., 3x the error.
-            if (o1_model.rmse < bestModel.rmse * 3) {
-                 // Check if it's not just noise
-                const signalMagnitude = meanTime > 0 ? meanTime : 1;
-                const normalizedError = bestModel.rmse / signalMagnitude;
-                // If the error is very small relative to the measurement, it's likely noise, so prefer O(1).
-                if (normalizedError < 0.1) { // Error is less than 10% of the mean time
-                    bestModel = o1_model;
-                }
-            }
-        }
-    }
-  }
-
-  // Final check: If the timing is extremely low and flat, it must be O(1).
-  // This catches cases where O(log n) fits a tiny upward noise trend.
-  const timeVariance = ss.variance(timeValues);
-  const maxTime = ss.max(timeValues);
-  const noiseFloor = 1e-9;
-  
-  if (maxTime < 0.001 && (timeVariance / meanTime) < 0.1) { // < 1 microsecond and low relative variance
-    bestModel = models.find(m => m.type.includes('O(1)'));
-  }
-
-  // Calculate Confidence
-  // Confidence is a combination of:
-  // 1. Fit Quality: How well does the best model explain the data?
-  // 2. Separation: How much better is the best model than the next best hypothesis?
-  
   let confidence;
-  
-  if (bestModel.rmse < noiseFloor) {
-      // If the error is indistinguishable from zero (noise), we are 100% confident it's the simplest model fitting this.
-      confidence = 100;
+
+  // Hybrid approach: use a special heuristic for ultra-fast functions, and standard logic for others.
+  const isUltraFast = meanTime < 1e-4;
+
+  if (isUltraFast) {
+    const o1Model = models.find(m => m.type.includes('O(1)'));
+    const logModel = models.find(m => m.type.includes('O(log n)'));
+
+    // For ultra-fast functions, trust the model with the mathematically superior (lower) RMSE.
+    if (logModel && o1Model && logModel.rmse < o1Model.rmse) {
+      bestModel = logModel;
+    } else {
+      bestModel = o1Model; // Default to O(1) otherwise
+    }
+    
+    confidence = 95; // Assign a high, fixed confidence score based on this heuristic.
   } else {
-      // 1. Fit Quality (0 to 1)
-      // Normalized RMSE (Coefficient of Variation of the Error)
-      // If error is 10% of the signal, fit quality is 0.9.
-      const signalMagnitude = meanTime > 0 ? meanTime : 1;
-      const normalizedError = bestModel.rmse / signalMagnitude;
-      const fitQuality = Math.max(0, 1 - (normalizedError * 2)); // Penalize error more steeply
-      
-      // 2. Separation (0 to 1)
-      // Find the next best model that is NOT the chosen one (based on the sorted 'results' list or original 'models')
-      // Note: 'bestModel' might not be results[0] because of Occam's razor logic above.
-      
-      // Sort models by RMSE again just to be sure we find the runner up in terms of fit
-      const sortedByFit = [...models].sort((a, b) => a.rmse - b.rmse);
-      let secondBest = sortedByFit[0];
-      if (secondBest === bestModel) {
-          secondBest = sortedByFit[1];
+    // Standard logic for macroscopic measurements: prefer simpler models if they are "close enough".
+    for (let i = 1; i < models.length; i++) {
+      const candidate = models[i];
+      if (candidate.complexity < bestModel.complexity) {
+        const diff = (candidate.rmse - bestModel.rmse) / (bestModel.rmse || 1e-9);
+        if (diff < 0.15) { // 15% tolerance
+          bestModel = candidate;
+        }
       }
-      
-      let separation = 0;
-      if (secondBest) {
-          // Percent difference between best RMSE and second best RMSE
-          separation = (secondBest.rmse - bestModel.rmse) / (secondBest.rmse || 1);
-          // Clamp to 0-1 range (if second best is way worse, separation is high)
-          separation = Math.min(1, separation);
-      }
-      
-      // Combined Confidence Score
-      // We weight Fit Quality higher because if the data is garbage, separation doesn't matter.
-      confidence = (fitQuality * 0.7 + separation * 0.3) * 100;
+    }
+
+    // Standard confidence calculation for slower functions
+    const signalMagnitude = meanTime > 0 ? meanTime : 1;
+    const normalizedError = bestModel.rmse / signalMagnitude;
+    const fitQuality = Math.max(0, 1 - (normalizedError * 2));
+
+    const sortedByFit = [...models].sort((a, b) => a.rmse - b.rmse);
+    let secondBest = sortedByFit[0];
+    if (secondBest === bestModel) {
+      secondBest = sortedByFit[1];
+    }
+
+    let separation = 0;
+    if (secondBest) {
+      separation = (secondBest.rmse - bestModel.rmse) / (secondBest.rmse || 1);
+      separation = Math.min(1, separation);
+    }
+
+    confidence = (fitQuality * 0.7 + separation * 0.3) * 100;
   }
 
   // Formatting for output (converting RMSE to 4 decimals string if needed, or keeping number)

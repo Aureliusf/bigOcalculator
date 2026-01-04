@@ -38,8 +38,14 @@ function getStringFromConsole(message) {
   return userInput;
 }
 
+function getYesNoFromConsole(message) {
+  const response = readlineSync.keyInYN(message);
+  return response;
+}
+
 module.exports = {
   getNumberFromConsole,
   getOptionFromConsole,
   getStringFromConsole,
+  getYesNoFromConsole,
 };

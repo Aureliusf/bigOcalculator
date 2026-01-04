@@ -18,18 +18,6 @@ function linearTime(arr) {
   return sum;
 }
 
-// O(n^2) - Quadratic Time Complexity
-// The execution time grows quadratically with the input size (n).
-function quadraticTime(arr) {
-  let count = 0;
-  for (let i = 0; i < arr.length; i++) {
-    for (let j = 0; j < arr.length; j++) {
-      count++; // Operations inside nested loops run 'n * n' times
-    }
-  }
-  return count;
-}
-
 // O(log n) - Logarithmic Time Complexity
 // The execution time halves with each step. Example: Binary Search.
 function logarithmicTime(arr, target) {
@@ -48,6 +36,19 @@ function logarithmicTime(arr, target) {
   }
   return -1; // Target not found
 }
+
+// O(n^2) - Quadratic Time Complexity
+// The execution time grows quadratically with the input size (n).
+function quadraticTime(arr) {
+  let count = 0;
+  for (let i = 0; i < arr.length; i++) {
+    for (let j = 0; j < arr.length; j++) {
+      count++; // Operations inside nested loops run 'n * n' times
+    }
+  }
+  return count;
+}
+
 
 
 
