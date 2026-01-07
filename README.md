@@ -1,8 +1,9 @@
 # Big O Notation Calculator
 
 A full-stack web application designed to analyze the time complexity (Big O notation) of JavaScript functions. Submit your code, choose an input growth strategy, and get back a detailed analysis with a confidence score and a visual graph of its performance.
-Live Demo: Link to your live demo here
-Screenshot of the Big O Calculator <!-- TODO: Add a screenshot of the application -->
+
+Pending Live Demo: Link to your live demo here
+Pending Screenshot of the Big O Calculator <!-- TODO: Add a screenshot of the application -->
 
 ---
 
