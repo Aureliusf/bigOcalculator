@@ -1,5 +1,5 @@
 function functionToTest(nums) {
-  target = -1;
+  let target = -1;
   nums.sort((a, b) => a - b);
   const result = []
 
