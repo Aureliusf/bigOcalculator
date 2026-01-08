@@ -10,6 +10,9 @@ Build artifacts
 .env
 .envrc
 
+# Package lock
+package-lock.json
+
 # Logs
 npm-debug.log*
 yarn-debug.log*

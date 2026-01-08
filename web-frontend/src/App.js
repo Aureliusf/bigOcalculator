@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useReducer } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { javascript } from '@codemirror/lang-javascript';
 import { gruvboxDark } from '@uiw/codemirror-theme-gruvbox-dark';
@@ -13,28 +13,71 @@ function functionToTest(input) {
   // Your code here
 }`;
 
+const initialState = {
+    code: functionTemplate,
+    algoName: '',
+    inputMode: 'array',
+    growthStrategy: 'powersOf10',
+    useSuperRange: false,
+    powersOf10Count: 4,
+    doublingStart: 1,
+    doublingCount: 10,
+    linearStart: 100,
+    linearEnd: 1000,
+    linearStep: 100,
+    result: null,
+    error: null,
+    isLoading: false,
+    isBigOVisible: false,
+};
+
+function reducer(state, action) {
+    switch (action.type) {
+        case 'SET_FIELD':
+            return { ...state, [action.field]: action.value };
+        case 'START_ANALYSIS':
+            return { ...state, isLoading: true, error: null, result: null };
+        case 'ANALYSIS_SUCCESS':
+            return {
+                ...state,
+                isLoading: false,
+                result: action.payload,
+                isBigOVisible: action.payload.confidence >= 75,
+            };
+        case 'ANALYSIS_ERROR':
+            return { ...state, isLoading: false, error: action.payload };
+        default:
+            return state;
+    }
+}
+
 function App() {
-    const [code, setCode] = useState(functionTemplate);
-    const [algoName, setAlgoName] = useState('');
-    const [inputMode, setInputMode] = useState('array');
-    const [growthStrategy, setGrowthStrategy] = useState('powersOf10');
-    const [useSuperRange, setUseSuperRange] = useState(false);
-    const [powersOf10Count, setPowersOf10Count] = useState(4);
-    const [doublingStart, setDoublingStart] = useState(1);
-    const [doublingCount, setDoublingCount] = useState(10);
-    const [linearStart, setLinearStart] = useState(100);
-    const [linearEnd, setLinearEnd] = useState(1000);
-    const [linearStep, setLinearStep] = useState(100);
-    const [result, setResult] = useState(null);
-    const [error, setError] = useState(null);
-    const [isLoading, setIsLoading] = useState(false);
-    const [isBigOVisible, setIsBigOVisible] = useState(false);
+    const [state, dispatch] = useReducer(reducer, initialState);
+    const {
+        code,
+        algoName,
+        inputMode,
+        growthStrategy,
+        useSuperRange,
+        powersOf10Count,
+        doublingStart,
+        doublingCount,
+        linearStart,
+        linearEnd,
+        linearStep,
+        result,
+        error,
+        isLoading,
+        isBigOVisible,
+    } = state;
+
+    const setField = (field, value) => {
+        dispatch({ type: 'SET_FIELD', field, value });
+    };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        setIsLoading(true);
-        setError(null);
-        setResult(null);
+        dispatch({ type: 'START_ANALYSIS' });
 
         let inputSizes;
         if (useSuperRange) {
@@ -59,7 +102,6 @@ function App() {
         }
 
         const payload = { code, algoName, inputMode, inputSizes };
-        console.log('Sending payload:', payload);
 
         try {
             const response = await fetch('http://localhost:3001/api/analyze', {
@@ -71,19 +113,12 @@ function App() {
             const data = await response.json();
 
             if (response.ok) {
-                setResult(data);
-                if (data.confidence >= 75) {
-                    setIsBigOVisible(true);
-                } else {
-                    setIsBigOVisible(false);
-                }
+                dispatch({ type: 'ANALYSIS_SUCCESS', payload: data });
             } else {
-                setError(data.error);
+                dispatch({ type: 'ANALYSIS_ERROR', payload: data.error });
             }
         } catch (err) {
-            setError('Failed to connect to the server.');
-        } finally {
-            setIsLoading(false);
+            dispatch({ type: 'ANALYSIS_ERROR', payload: 'Failed to connect to the server.' });
         }
     };
 
@@ -100,7 +135,7 @@ function App() {
                             id="algoName"
                             type="text"
                             value={algoName}
-                            onChange={(e) => setAlgoName(e.target.value)}
+                            onChange={(e) => setField('algoName', e.target.value)}
                             required
                         />
                     </div>
@@ -111,9 +146,7 @@ function App() {
                             id="codeInput"
                             value={code}
                             extensions={[javascript({ jsx: true })]}
-                            onChange={(value, viewUpdate) => {
-                                setCode(value);
-                            }}
+                            onChange={(value) => setField('code', value)}
                             theme={gruvboxDark}
                         />
                     </div>
@@ -125,7 +158,7 @@ function App() {
                                     type="radio"
                                     value="array"
                                     checked={inputMode === 'array'}
-                                    onChange={(e) => setInputMode(e.target.value)}
+                                    onChange={(e) => setField('inputMode', e.target.value)}
                                 />
                                 Array
                             </label>
@@ -134,7 +167,7 @@ function App() {
                                     type="radio"
                                     value="number"
                                     checked={inputMode === 'number'}
-                                    onChange={(e) => setInputMode(e.target.value)}
+                                    onChange={(e) => setField('inputMode', e.target.value)}
                                 />
                                 Number
                             </label>
@@ -145,13 +178,12 @@ function App() {
                         <select
                             id="growthStrategy"
                             value={growthStrategy}
-                            onChange={(e) => setGrowthStrategy(e.target.value)}
+                            onChange={(e) => setField('growthStrategy', e.target.value)}
                             disabled={useSuperRange}
                         >
                             <option value="powersOf10">Powers of 10</option>
                             <option value="doubling">Doubling</option>
                             <option value="linear">Linear</option>
-                            {growthStrategy === 'custom' && <option value="custom">Custom</option>}
                         </select>
                     </div>
 
@@ -164,7 +196,7 @@ function App() {
                                         id="powersOf10Count"
                                         type="number"
                                         value={powersOf10Count}
-                                        onChange={(e) => setPowersOf10Count(parseInt(e.target.value))}
+                                        onChange={(e) => setField('powersOf10Count', parseInt(e.target.value))}
                                     />
                                 </div>
                             )}
@@ -176,7 +208,7 @@ function App() {
                                             id="doublingStart"
                                             type="number"
                                             value={doublingStart}
-                                            onChange={(e) => setDoublingStart(parseInt(e.target.value))}
+                                            onChange={(e) => setField('doublingStart', parseInt(e.target.value))}
                                         />
                                     </div>
                                     <div className="form-group">
@@ -185,7 +217,7 @@ function App() {
                                             id="doublingCount"
                                             type="number"
                                             value={doublingCount}
-                                            onChange={(e) => setDoublingCount(parseInt(e.target.value))}
+                                            onChange={(e) => setField('doublingCount', parseInt(e.target.value))}
                                         />
                                     </div>
                                 </>
@@ -198,7 +230,7 @@ function App() {
                                             id="linearStart"
                                             type="number"
                                             value={linearStart}
-                                            onChange={(e) => setLinearStart(parseInt(e.target.value))}
+                                            onChange={(e) => setField('linearStart', parseInt(e.target.value))}
                                         />
                                     </div>
                                     <div className="form-group">
@@ -207,7 +239,7 @@ function App() {
                                             id="linearEnd"
                                             type="number"
                                             value={linearEnd}
-                                            onChange={(e) => setLinearEnd(parseInt(e.target.value))}
+                                            onChange={(e) => setField('linearEnd', parseInt(e.target.value))}
                                         />
                                     </div>
                                     <div className="form-group">
@@ -216,7 +248,7 @@ function App() {
                                             id="linearStep"
                                             type="number"
                                             value={linearStep}
-                                            onChange={(e) => setLinearStep(parseInt(e.target.value))}
+                                            onChange={(e) => setField('linearStep', parseInt(e.target.value))}
                                         />
                                     </div>
                                 </>
@@ -229,7 +261,7 @@ function App() {
                             <input
                                 type="checkbox"
                                 checked={useSuperRange}
-                                onChange={(e) => setUseSuperRange(e.target.checked)}
+                                onChange={(e) => setField('useSuperRange', e.target.checked)}
                             />
                             High Precision (Super Range)
                         </label>
@@ -247,7 +279,7 @@ function App() {
                         {isBigOVisible ? (
                             <p><strong>Big O:</strong> {result.bigO}</p>
                         ) : (
-                            <p className="low-confidence" onClick={() => setIsBigOVisible(true)}>
+                            <p className="low-confidence" onClick={() => setField('isBigOVisible', true)}>
                                 <strong>Big O:</strong> Low confidence in this result. Click to reveal.
                             </p>
                         )}
